@@ -59,6 +59,27 @@ Researching concepts like:
 7. Trading involves substantial risk of loss
 8. Past performance does not indicate future results
 
+## 🚀 NEW: Bybit 24/7 Trading System
+
+We've added a complete 24/7 trading system for Bybit exchange with DeepSeek AI:
+
+### Features:
+- 🤖 **DeepSeek AI Analysis**: Advanced market analysis using DeepSeek's powerful AI
+- 🏦 **Bybit Integration**: Direct trading on Bybit spot markets
+- ⏰ **24/7 Operation**: Continuous trading with configurable intervals
+- 🛡️ **Risk Management**: Built-in position sizing and cash buffers
+- 📊 **Multi-Asset**: Trade multiple cryptocurrency pairs simultaneously
+
+### Quick Start:
+1. **Setup APIs**: Get DeepSeek AI and Bybit API keys
+2. **Configure**: Copy `.env.example` to `.env` and add your keys
+3. **Test**: Run `python test_bybit_setup.py` to verify setup
+4. **Trade**: Run `python src/main_bybit.py` to start 24/7 trading
+
+📖 **Full Setup Guide**: See [BYBIT_SETUP.md](BYBIT_SETUP.md) for detailed instructions
+
+⚠️ **Important**: This trades with real money. Start with small amounts and proper risk management!
+
 ## 👂 Looking for Updates?
 Project updates will be posted on [moondev.com](http://moondev.com) in the AI Agents for Trading Section.
 
