@@ -90,10 +90,18 @@ def check_dependencies():
     required_packages = [
         'pandas',
         'numpy',
-        'pandas_ta',
         'openai',
         'termcolor'
     ]
+    
+    # Teste pandas_ta separadamente (pode ter warning mas funciona)
+    try:
+        import pandas_ta as ta
+        cprint("✅ pandas_ta", "white", "on_green")
+        pandas_ta_ok = True
+    except ImportError:
+        cprint("❌ pandas_ta", "white", "on_red")
+        pandas_ta_ok = False
     
     missing_packages = []
     for package in required_packages:
@@ -104,8 +112,11 @@ def check_dependencies():
             missing_packages.append(package)
             cprint(f"❌ {package}", "white", "on_red")
     
-    if missing_packages:
-        cprint(f"\n❌ Pacotes ausentes: {', '.join(missing_packages)}", "white", "on_red")
+    if missing_packages or not pandas_ta_ok:
+        if missing_packages:
+            cprint(f"\n❌ Pacotes ausentes: {', '.join(missing_packages)}", "white", "on_red")
+        if not pandas_ta_ok:
+            cprint("❌ pandas_ta não pôde ser importado", "white", "on_red")
         cprint("💡 Execute: pip install -r requirements.txt", "white", "on_yellow")
         return False
     

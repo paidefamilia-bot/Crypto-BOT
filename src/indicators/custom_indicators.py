@@ -68,26 +68,35 @@ class TechnicalIndicators:
         """
         Calcula todos os indicadores necessários para análise da LLM
         """
-        # RSI (14 períodos)
-        df = TechnicalIndicators.calculate_rsi(df, close_col, period=14)
+        if df.empty or len(df) < 220:  # Precisa de pelo menos 220 velas para MME_200
+            print(f"⚠️ Dados insuficientes: {len(df)} velas. Mínimo: 220")
+            return df  # Retorna o DataFrame original mesmo sem indicadores
         
-        # 4 MME (9, 21, 50, 200)
-        df = TechnicalIndicators.calculate_ema_set(df, close_col)
-        
-        # DistanciaMM_Bands (indicador personalizado)
-        df = TechnicalIndicators.calculate_distancia_mm_bands(df, close_col)
-        
-        # Análises de contexto para a LLM
-        df['Preco_Acima_MME_9'] = df[close_col] > df['MME_9']
-        df['Preco_Acima_MME_21'] = df[close_col] > df['MME_21']
-        df['Preco_Acima_MME_50'] = df[close_col] > df['MME_50']
-        df['Preco_Acima_MME_200'] = df[close_col] > df['MME_200']
-        
-        # Alinhamento das MME para identificar tendência
-        df['MME_Alinhamento_Bullish'] = (df['MME_9'] > df['MME_21']) & (df['MME_21'] > df['MME_50']) & (df['MME_50'] > df['MME_200'])
-        df['MME_Alinhamento_Bearish'] = (df['MME_9'] < df['MME_21']) & (df['MME_21'] < df['MME_50']) & (df['MME_50'] < df['MME_200'])
-        
-        return df
+        try:
+            # RSI (14 períodos)
+            df = TechnicalIndicators.calculate_rsi(df, close_col, period=14)
+            
+            # 4 MME (9, 21, 50, 200)
+            df = TechnicalIndicators.calculate_ema_set(df, close_col)
+            
+            # DistanciaMM_Bands (indicador personalizado)
+            df = TechnicalIndicators.calculate_distancia_mm_bands(df, close_col)
+            
+            # Análises de contexto para a LLM
+            df['Preco_Acima_MME_9'] = df[close_col] > df['MME_9']
+            df['Preco_Acima_MME_21'] = df[close_col] > df['MME_21']
+            df['Preco_Acima_MME_50'] = df[close_col] > df['MME_50']
+            df['Preco_Acima_MME_200'] = df[close_col] > df['MME_200']
+            
+            # Alinhamento das MME para identificar tendência
+            df['MME_Alinhamento_Bullish'] = (df['MME_9'] > df['MME_21']) & (df['MME_21'] > df['MME_50']) & (df['MME_50'] > df['MME_200'])
+            df['MME_Alinhamento_Bearish'] = (df['MME_9'] < df['MME_21']) & (df['MME_21'] < df['MME_50']) & (df['MME_50'] < df['MME_200'])
+            
+            return df
+            
+        except Exception as e:
+            print(f"❌ Erro calculando indicadores: {str(e)}")
+            return df  # Retorna o DataFrame original
     
     @staticmethod
     def prepare_llm_analysis_data(df, lookback_periods=[1, 3, 5, 10, 20]):
