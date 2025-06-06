@@ -47,6 +47,70 @@ class AutonomousBacktest:
         cprint("🧪 Moon Dev's Autonomous Backtest System initialized!", "white", "on_blue")
         cprint(f"💰 Capital inicial: ${initial_capital:,.2f}", "white", "on_green")
     
+    def detect_and_fix_csv_format(self, df):
+        """
+        Detecta e corrige automaticamente diferentes formatos de CSV
+        """
+        cprint("🔍 Detectando formato do CSV...", "white", "on_blue")
+        
+        # Mostra as primeiras colunas para debug
+        print(f"Colunas encontradas: {list(df.columns)}")
+        
+        # Mapas de colunas comuns
+        column_mappings = {
+            # Formato padrão
+            'timestamp': ['timestamp', 'time', 'datetime', 'date', 'Date', 'Time', 'Timestamp'],
+            'open': ['open', 'Open', 'OPEN', 'o'],
+            'high': ['high', 'High', 'HIGH', 'h'],
+            'low': ['low', 'Low', 'LOW', 'l'],
+            'close': ['close', 'Close', 'CLOSE', 'c', 'price', 'Price'],
+            'volume': ['volume', 'Volume', 'VOLUME', 'vol', 'Vol', 'v']
+        }
+        
+        # Se não tem timestamp, tenta usar index como timestamp
+        if not any(col in df.columns for col in column_mappings['timestamp']):
+            cprint("⚠️ Coluna de timestamp não encontrada, usando índice", "white", "on_yellow")
+            # Cria timestamp baseado no índice (assumindo dados diários)
+            start_date = pd.Timestamp('2020-01-01')
+            df['timestamp'] = [start_date + pd.Timedelta(days=i) for i in range(len(df))]
+        
+        # Mapeia colunas para formato padrão
+        new_df = df.copy()
+        for standard_name, possible_names in column_mappings.items():
+            for possible_name in possible_names:
+                if possible_name in df.columns:
+                    if standard_name != possible_name:
+                        new_df[standard_name] = df[possible_name]
+                        cprint(f"✅ Mapeado: {possible_name} → {standard_name}", "white", "on_green")
+                    break
+        
+        # Se ainda falta volume, cria volume sintético
+        if 'volume' not in new_df.columns:
+            cprint("⚠️ Volume não encontrado, criando volume sintético", "white", "on_yellow")
+            new_df['volume'] = 1000000  # Volume fixo
+        
+        # Verifica se temos pelo menos OHLC
+        ohlc_cols = ['open', 'high', 'low', 'close']
+        missing_ohlc = [col for col in ohlc_cols if col not in new_df.columns]
+        
+        if missing_ohlc:
+            # Se só temos close/price, cria OHLC sintético
+            if 'close' in new_df.columns:
+                cprint("⚠️ Criando OHLC sintético a partir do preço de fechamento", "white", "on_yellow")
+                new_df['open'] = new_df['close'].shift(1).fillna(new_df['close'].iloc[0])
+                new_df['high'] = new_df[['open', 'close']].max(axis=1) * 1.001  # +0.1%
+                new_df['low'] = new_df[['open', 'close']].min(axis=1) * 0.999   # -0.1%
+            else:
+                raise ValueError(f"Não foi possível criar OHLC. Colunas ausentes: {missing_ohlc}")
+        
+        # Remove colunas desnecessárias (mantém apenas as padronizadas)
+        standard_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        columns_to_keep = [col for col in standard_columns if col in new_df.columns]
+        new_df = new_df[columns_to_keep].copy()
+        
+        cprint(f"✅ Formato detectado e corrigido: {len(new_df)} linhas", "white", "on_green")
+        return new_df
+    
     def load_historical_data_from_csv(self, csv_file_path):
         """
         Carrega dados históricos de arquivo CSV
@@ -61,12 +125,15 @@ class AutonomousBacktest:
             # Carrega CSV
             df = pd.read_csv(csv_file_path)
             
-            # Verifica colunas obrigatórias
+            # Detecta formato do CSV automaticamente
+            df = self.detect_and_fix_csv_format(df)
+            
+            # Verifica colunas obrigatórias após conversão
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
             if missing_columns:
-                raise ValueError(f"Colunas obrigatórias ausentes: {missing_columns}")
+                raise ValueError(f"Colunas obrigatórias ausentes após conversão: {missing_columns}")
             
             # Converte timestamp para datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'])
