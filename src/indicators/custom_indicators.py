@@ -104,7 +104,7 @@ class TechnicalIndicators:
         Prepara os dados dos indicadores para análise da LLM
         Inclui valores atuais e histórico para análise multidimensional
         """
-        if df.empty or len(df) < max(lookback_periods) + 200:  # Precisa de dados suficientes
+        if df.empty or len(df) < 220:  # Precisa de dados suficientes para indicadores
             return None
         
         latest_idx = len(df) - 1

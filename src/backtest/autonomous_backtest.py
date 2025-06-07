@@ -29,13 +29,17 @@ class AutonomousBacktest:
         """
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
-            raise ValueError("🚨 DEEPSEEK_API_KEY not found in environment variables!")
-            
-        # Initialize DeepSeek client
-        self.client = openai.OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com"
-        )
+            cprint("⚠️ DEEPSEEK_API_KEY não encontrada! Usando modo simulado.", "white", "on_yellow")
+            cprint("💡 Para usar a LLM real, configure: export DEEPSEEK_API_KEY=sua_chave", "white", "on_cyan")
+            self.client = None
+            self.simulation_mode = True
+        else:
+            # Initialize DeepSeek client
+            self.client = openai.OpenAI(
+                api_key=api_key,
+                base_url="https://api.deepseek.com"
+            )
+            self.simulation_mode = False
         
         self.initial_capital = initial_capital
         self.current_capital = initial_capital
@@ -217,12 +221,12 @@ class AutonomousBacktest:
             available_data = market_data.iloc[:current_idx+1].copy()
             
             if len(available_data) < 220:  # Precisa de dados suficientes
-                return None, None, None
+                return "HOLD", 0, "Dados insuficientes para análise"
             
             # Prepara dados para análise
             analysis_data = TechnicalIndicators.prepare_llm_analysis_data(available_data)
             if not analysis_data:
-                return None, None, None
+                return "HOLD", 0, "Falha preparando dados para análise"
             
             # Cria prompt simplificado para backtest (mais eficiente)
             base_prompt = create_autonomous_llm_prompt()
@@ -258,42 +262,117 @@ HISTÓRICO (últimos 5 períodos):
                     hist = analysis_data['historical_analysis'][f'{period}_periodos_atras']
                     data_summary += f"• {period}p atrás: RSI={hist['RSI']}, Dist={hist['DistanciaMM']}%, Bull={hist['alinhamento_bullish']}\n"
             
-            # Análise com LLM
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": base_prompt},
-                    {"role": "user", "content": data_summary}
-                ],
-                max_tokens=800,
-                temperature=0.2  # Baixa temperatura para consistência
-            )
-            
-            analysis_result = response.choices[0].message.content
-            lines = analysis_result.split('\n')
-            decision = lines[0].strip().upper() if lines else "HOLD"
-            
-            if decision not in ['BUY', 'SELL', 'HOLD']:
-                decision = "HOLD"
-            
-            # Extrai confiança
-            confidence = 50
-            for line in lines:
-                if any(word in line.lower() for word in ['confiança', 'confidence']):
-                    try:
-                        numbers = [int(s) for s in line.split() if s.isdigit()]
-                        if numbers:
-                            confidence = min(max(numbers[0], 0), 100)
-                    except:
-                        pass
-            
-            reasoning = '\n'.join(lines[1:]) if len(lines) > 1 else "Análise resumida"
+            if self.simulation_mode:
+                # Análise simulada baseada em indicadores técnicos
+                decision, confidence, reasoning = self.simulate_llm_analysis(analysis_data)
+            else:
+                # Análise com LLM real
+                response = self.client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": base_prompt},
+                        {"role": "user", "content": data_summary}
+                    ],
+                    max_tokens=800,
+                    temperature=0.2  # Baixa temperatura para consistência
+                )
+                
+                analysis_result = response.choices[0].message.content
+                lines = analysis_result.split('\n')
+                decision = lines[0].strip().upper() if lines else "HOLD"
+                
+                if decision not in ['BUY', 'SELL', 'HOLD']:
+                    decision = "HOLD"
+                
+                # Extrai confiança
+                confidence = 50
+                for line in lines:
+                    if any(word in line.lower() for word in ['confiança', 'confidence']):
+                        try:
+                            numbers = [int(s) for s in line.split() if s.isdigit()]
+                            if numbers:
+                                confidence = min(max(numbers[0], 0), 100)
+                        except:
+                            pass
+                
+                reasoning = '\n'.join(lines[1:]) if len(lines) > 1 else "Análise resumida"
             
             return decision, confidence, reasoning
             
         except Exception as e:
             print(f"❌ Erro na análise: {str(e)}")
             return "HOLD", 0, f"Erro: {str(e)}"
+    
+    def simulate_llm_analysis(self, analysis_data):
+        """
+        Simula análise da LLM usando indicadores técnicos
+        """
+        try:
+            current = analysis_data['current_indicators']
+            
+            # Extrai valores dos indicadores
+            rsi = current['RSI']['value']
+            distancia_mm = current['DistanciaMM_Bands']['distancia_percentual']
+            exaustao_bullish = current['DistanciaMM_Bands']['exaustao_bullish']
+            exaustao_bearish = current['DistanciaMM_Bands']['exaustao_bearish']
+            alinhamento_bullish = current['contexto_tendencia']['alinhamento_bullish']
+            alinhamento_bearish = current['contexto_tendencia']['alinhamento_bearish']
+            
+            # Lógica de decisão simulada
+            decision = "HOLD"
+            confidence = 50
+            reasoning = "Análise simulada baseada em indicadores técnicos"
+            
+            # Sinais de compra
+            buy_signals = 0
+            if rsi < 30:  # RSI sobrevenda
+                buy_signals += 2
+            elif rsi < 40:
+                buy_signals += 1
+            
+            if exaustao_bearish:  # Exaustão bearish
+                buy_signals += 2
+            
+            if alinhamento_bullish:  # Alinhamento bullish das MME
+                buy_signals += 1
+            
+            if distancia_mm < -2:  # Preço muito abaixo da média
+                buy_signals += 1
+            
+            # Sinais de venda
+            sell_signals = 0
+            if rsi > 70:  # RSI sobrecompra
+                sell_signals += 2
+            elif rsi > 60:
+                sell_signals += 1
+            
+            if exaustao_bullish:  # Exaustão bullish
+                sell_signals += 2
+            
+            if alinhamento_bearish:  # Alinhamento bearish das MME
+                sell_signals += 1
+            
+            if distancia_mm > 2:  # Preço muito acima da média
+                sell_signals += 1
+            
+            # Determina decisão
+            if buy_signals >= 3 and buy_signals > sell_signals:
+                decision = "BUY"
+                confidence = min(50 + (buy_signals * 10), 85)
+                reasoning = f"Sinais de compra: RSI={rsi:.1f}, DistMM={distancia_mm:.1f}%, ExaustãoBear={exaustao_bearish}, AlinhBull={alinhamento_bullish}"
+            elif sell_signals >= 3 and sell_signals > buy_signals:
+                decision = "SELL"
+                confidence = min(50 + (sell_signals * 10), 85)
+                reasoning = f"Sinais de venda: RSI={rsi:.1f}, DistMM={distancia_mm:.1f}%, ExaustãoBull={exaustao_bullish}, AlinhBear={alinhamento_bearish}"
+            else:
+                decision = "HOLD"
+                confidence = 40
+                reasoning = f"Sinais mistos: Buy={buy_signals}, Sell={sell_signals}, RSI={rsi:.1f}"
+            
+            return decision, confidence, reasoning
+            
+        except Exception as e:
+            return "HOLD", 0, f"Erro na simulação: {str(e)}"
     
     def execute_backtest_trade(self, symbol, decision, confidence, price, timestamp):
         """
@@ -453,6 +532,10 @@ HISTÓRICO (últimos 5 períodos):
                         symbol, all_data[symbol], i
                     )
                     
+                    # Debug: mostra algumas decisões para verificar
+                    if i % (analysis_interval * 50) == 0:  # A cada 50 análises
+                        print(f"🔍 Debug - {symbol}: {decision} (conf: {confidence}%) - {reasoning[:100]}...")
+                    
                     if decision and decision != "HOLD" and confidence >= confidence_min:
                         # Registra decisão
                         self.decisions_history.append({
@@ -500,24 +583,33 @@ HISTÓRICO (últimos 5 períodos):
         total_trades = len(self.trade_history)
         
         # Análise de trades
-        trades_df = pd.DataFrame(self.trade_history)
-        buy_trades = trades_df[trades_df['action'] == 'BUY']
-        sell_trades = trades_df[trades_df['action'] == 'SELL']
-        
-        # Calcula P&L por trade
-        pnl_trades = []
-        for _, sell in sell_trades.iterrows():
-            symbol = sell['symbol']
-            # Encontra compras correspondentes (simplificado)
-            symbol_buys = buy_trades[buy_trades['symbol'] == symbol]
-            if not symbol_buys.empty:
-                avg_buy_price = symbol_buys['price'].mean()
-                pnl = (sell['price'] - avg_buy_price) / avg_buy_price * 100
-                pnl_trades.append(pnl)
-        
-        win_rate = len([p for p in pnl_trades if p > 0]) / len(pnl_trades) * 100 if pnl_trades else 0
-        avg_win = np.mean([p for p in pnl_trades if p > 0]) if pnl_trades else 0
-        avg_loss = np.mean([p for p in pnl_trades if p < 0]) if pnl_trades else 0
+        if self.trade_history:
+            trades_df = pd.DataFrame(self.trade_history)
+            buy_trades = trades_df[trades_df['action'] == 'BUY']
+            sell_trades = trades_df[trades_df['action'] == 'SELL']
+            
+            # Calcula P&L por trade
+            pnl_trades = []
+            for _, sell in sell_trades.iterrows():
+                symbol = sell['symbol']
+                # Encontra compras correspondentes (simplificado)
+                symbol_buys = buy_trades[buy_trades['symbol'] == symbol]
+                if not symbol_buys.empty:
+                    avg_buy_price = symbol_buys['price'].mean()
+                    pnl = (sell['price'] - avg_buy_price) / avg_buy_price * 100
+                    pnl_trades.append(pnl)
+            
+            win_rate = len([p for p in pnl_trades if p > 0]) / len(pnl_trades) * 100 if pnl_trades else 0
+            avg_win = np.mean([p for p in pnl_trades if p > 0]) if pnl_trades else 0
+            avg_loss = np.mean([p for p in pnl_trades if p < 0]) if pnl_trades else 0
+        else:
+            # Sem trades executados
+            buy_trades = pd.DataFrame()
+            sell_trades = pd.DataFrame()
+            pnl_trades = []
+            win_rate = 0
+            avg_win = 0
+            avg_loss = 0
         
         # Portfolio performance
         portfolio_df = pd.DataFrame(self.portfolio_history)
